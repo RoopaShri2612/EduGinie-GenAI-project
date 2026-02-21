@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduGenie - Learning Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="background-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+</div>
+
+<div class="container">
+    <div class="header">
+        <h1>EduGenie <span class="genie-emoji">🧞‍♂️</span></h1>
+        <p class="subtitle">Your smart, friendly study companion</p>
+    </div>
+    
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab(event, 'ask-panel')">
+            <i class="fa-solid fa-clipboard-question"></i> Ask
+        </button>
+        <button class="tab-btn" onclick="switchTab(event, 'quiz-panel')">
+            <i class="fa-solid fa-list-check"></i> Quiz
+        </button>
+        <button class="tab-btn" onclick="switchTab(event, 'summary-panel')">
+            <i class="fa-solid fa-bolt"></i> Summarize
+        </button>
+    </div>
+
+    <div id="ask-panel" class="panel active">
+        <div class="input-wrapper">
+            <input type="text" id="question-input" placeholder="e.g., How does cloud computing work?">
+            <div id="question-error" class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Please enter a question.</div>
+            <button class="submit-btn" onclick="handleRequest('ask', 'question-input', 'question')">
+                Ask EduGenie <i class="fa-solid fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="quiz-panel" class="panel">
+        <div class="input-wrapper">
+            <input type="text" id="topic-input" placeholder="e.g., The Solar System">
+            <div id="topic-error" class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Please enter a topic.</div>
+            <button class="submit-btn" onclick="handleRequest('quiz', 'topic-input', 'topic')">
+                Create Quiz <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="summary-panel" class="panel">
+        <div class="input-wrapper">
+            <textarea id="material-input" rows="6" placeholder="Paste your study notes or long articles here..."></textarea>
+            <div id="material-error" class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Please paste some material.</div>
+            <button class="submit-btn" onclick="handleRequest('summary', 'material-input', 'material')">
+                Summarize Notes <i class="fa-solid fa-compress"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="spinner" class="spinner">
+        <div class="bounce1"></div>
+        <div class="bounce2"></div>
+        <div class="bounce3"></div>
+    </div>
+    
+    <div id="resultCard" class="result-card">
+        <div class="result-header">
+            <i class="fa-solid fa-robot"></i> EduGenie says:
+        </div>
+        <div id="resultContent" class="result-content"></div>
+    </div>
+
+</div>
+
+<script>
+    // Variables to track quiz score
+    let currentQuizScore = 0;
+    let totalQuestions = 0;
+    let answeredQuestions = 0;
+
+    function switchTab(event, tabId) {
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active'); 
+        
+        document.getElementById('resultCard').style.display = 'none';
+        document.getElementById('spinner').style.display = 'none';
+    }
+
+    async function handleRequest(endpoint, inputId, payloadKey) {
+        const inputField = document.getElementById(inputId);
+        const inputValue = inputField.value.trim();
+        const errorMsg = document.getElementById(inputId.split('-')[0] + '-error');
+        const resultCard = document.getElementById('resultCard');
+        const resultContent = document.getElementById('resultContent');
+        const spinner = document.getElementById('spinner');
+        
+        if (!inputValue) {
+            errorMsg.style.display = 'block';
+            return;
+        }
+        errorMsg.style.display = 'none';
+
+        resultCard.style.display = 'none';
+        spinner.style.display = 'flex'; 
+
+        try {
+            const response = await fetch('/' + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [payloadKey]: inputValue })
+            });
+            
+            const data = await response.json();
+            spinner.style.display = 'none';
+            resultCard.style.display = 'block';
+            
+            if (response.ok) {
+                if (endpoint === 'quiz') {
+                    renderInteractiveQuiz(data.result);
+                } else {
+                    resultContent.innerHTML = marked.parse(data.result);
+                }
+            } else {
+                resultContent.innerHTML = `<p style="color: #e74c3c;">Error: ${data.error}</p>`;
+            }
+        } catch (err) {
+            spinner.style.display = 'none';
+            resultCard.style.display = 'block';
+            resultContent.innerHTML = '<p style="color: #e74c3c;">Failed to connect to EduGenie.</p>';
+        }
+    }
+
+    function renderInteractiveQuiz(jsonString) {
+        const resultContent = document.getElementById('resultContent');
+        let quizData;
+        
+        // Clean up the string just in case Gemini wrapped it in markdown code blocks
+        let cleanJsonString = jsonString.trim();
+        if (cleanJsonString.startsWith('```json')) {
+            cleanJsonString = cleanJsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
+        } else if (cleanJsonString.startsWith('```')) {
+            cleanJsonString = cleanJsonString.replace(/^```\n/, '').replace(/\n```$/, '');
+        }
+
+        try {
+            quizData = JSON.parse(cleanJsonString);
+        } catch (e) {
+            console.error("Failed to parse JSON:", e);
+            resultContent.innerHTML = "<p>Oops! I had trouble creating the quiz. Try again!</p>";
+            return;
+        }
+
+        // Reset tracking variables
+        currentQuizScore = 0;
+        totalQuestions = quizData.length;
+        answeredQuestions = 0;
+
+        let html = '<div class="interactive-quiz">';
+        quizData.forEach((q, index) => {
+            html += `
+                <div class="quiz-question-block" id="q-block-${index}">
+                    <h4 class="quiz-question-text">${index + 1}. ${q.question}</h4>
+                    <div class="options-container">
+            `;
+            q.options.forEach(opt => {
+                // Escape quotes so they don't break the HTML
+                const safeOpt = opt.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+                const safeAns = q.answer.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+                
+                html += `
+                    <button class="quiz-option" 
+                            onclick="checkAnswer(this, ${index}, '${safeOpt}', '${safeAns}')">
+                        ${opt}
+                    </button>
+                `;
+            });
+            html += `</div></div>`;
+        });
+
+        html += `
+            <div id="quiz-score-container" class="score-container" style="display:none;">
+                <h3>🎉 Quiz Complete! Your Score: <span id="quiz-score">0</span> / ${totalQuestions}</h3>
+                <p>Keep learning, you're doing great! 🚀</p>
+            </div>
+        </div>`;
+        
+        resultContent.innerHTML = html;
+    }
+
+    function checkAnswer(btn, qIndex, selected, correct) {
+        const container = document.getElementById(`q-block-${qIndex}`);
+        const buttons = container.querySelectorAll('.quiz-option');
+        
+        // Disable all buttons for this question so user can't click twice
+        buttons.forEach(b => {
+            b.disabled = true;
+            // Highlight the correct answer no matter what they clicked
+            // Use standard JS replacement to undo the HTML escaping we did earlier to match the text
+            const btnText = b.innerText.trim();
+            const correctText = correct.replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+            
+            if (btnText === correctText) {
+                b.classList.add('correct');
+            }
+        });
+
+        const selectedText = selected.replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+        const correctTextMatch = correct.replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+
+        // Check if the clicked button is right or wrong
+        if (selectedText === correctTextMatch) {
+            currentQuizScore++;
+        } else {
+            btn.classList.add('wrong');
+        }
+
+        answeredQuestions++;
+        
+        // If all questions answered, show score
+        if (answeredQuestions === totalQuestions) {
+            document.getElementById('quiz-score-container').style.display = 'block';
+            document.getElementById('quiz-score').innerText = currentQuizScore;
+        }
+    }
+</script>
+
+</body>
+</html>
